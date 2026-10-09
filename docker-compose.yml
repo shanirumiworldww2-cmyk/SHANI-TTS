@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  voiver-studio:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: unless-stopped
+    depends_on:
+      - coqui-tts
+
+  coqui-tts:
+    image: ghcr.io/coqui-ai/tts:latest
+    ports:
+      - "5002:5002"
+    command: >
+      --model_name tts_models/multilingual/multi-dataset/xtts_v2
+      --port 5002
+    restart: unless-stopped
+    volumes:
+      - ~/.local/share/tts:/root/.local/share/tts
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

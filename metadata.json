@@ -1,0 +1,6 @@
+{
+  "name": "VOIVER - Open-Source Coqui TTS Studio",
+  "description": "Professional ElevenLabs-style TTS studio powered by open-source Coqui TTS with unlimited character chunking, local model hosting, voice cloning, and batch processing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

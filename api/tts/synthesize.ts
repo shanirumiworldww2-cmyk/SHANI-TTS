@@ -1,5 +1,44 @@
 import { Communicate } from 'edge-tts-universal';
 
+// Helper to send binary audio buffer across Vercel / Express / Node runtimes
+function sendBuffer(res: any, status: number, buffer: Buffer, contentType: string, extraHeaders: Record<string, string> = {}) {
+  if (typeof res.status === 'function') {
+    res.status(status);
+  } else {
+    res.statusCode = status;
+  }
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', String(buffer.length));
+  for (const [k, v] of Object.entries(extraHeaders)) {
+    res.setHeader(k, v);
+  }
+  if (typeof res.send === 'function') {
+    res.send(buffer);
+  } else if (typeof res.end === 'function') {
+    res.end(buffer);
+  }
+}
+
+// Helper to send JSON responses across Vercel / Express / Node runtimes
+function sendJson(res: any, status: number, data: any, extraHeaders: Record<string, string> = {}) {
+  if (typeof res.status === 'function') {
+    res.status(status);
+  } else {
+    res.statusCode = status;
+  }
+  res.setHeader('Content-Type', 'application/json');
+  for (const [k, v] of Object.entries(extraHeaders)) {
+    res.setHeader(k, v);
+  }
+  if (typeof res.json === 'function') {
+    res.json(data);
+  } else if (typeof res.send === 'function') {
+    res.send(JSON.stringify(data));
+  } else if (typeof res.end === 'function') {
+    res.end(JSON.stringify(data));
+  }
+}
+
 // Helper to parse JSON body across Vercel Serverless / Node HTTP runtimes
 async function parseRequestBody(req: any): Promise<any> {
   if (req.body && typeof req.body === 'object') {
@@ -181,14 +220,12 @@ export default async function handler(req: any, res: any) {
   }
 
   if (req.method !== 'POST') {
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
+    sendJson(res, 200, {
       status: 'ok',
       engine: 'SHANI-TTS / VOIVER Neural TTS Cloud Engine',
       endpoint: '/api/tts/synthesize',
       usage: 'POST JSON with { text, voice, settings }',
-    }));
+    });
     return;
   }
 
@@ -197,9 +234,7 @@ export default async function handler(req: any, res: any) {
     const { text, voice, settings, server_url, useLocalServer } = body;
 
     if (!text || !text.trim()) {
-      res.statusCode = 400;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'Text prompt is required' }));
+      sendJson(res, 400, { error: 'Text prompt is required' });
       return;
     }
 
@@ -230,12 +265,10 @@ export default async function handler(req: any, res: any) {
           const buffer = Buffer.from(arrayBuffer);
           if (buffer.length >= 256) {
             console.log(`[TTS Timing] Local server completed in ${Date.now() - coquiStart}ms (${buffer.length} bytes)`);
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'audio/wav');
-            res.setHeader('Content-Length', buffer.length);
-            res.setHeader('X-TTS-Engine', 'local-coqui');
-            res.setHeader('X-Response-Time-Ms', String(Date.now() - reqStart));
-            res.end(buffer);
+            sendBuffer(res, 200, buffer, 'audio/wav', {
+              'X-TTS-Engine': 'local-coqui',
+              'X-Response-Time-Ms': String(Date.now() - reqStart),
+            });
             return;
           }
         }
@@ -314,12 +347,10 @@ export default async function handler(req: any, res: any) {
       if (audioBuffer.length >= 256) {
         const totalDuration = Date.now() - reqStart;
         console.log(`[TTS Timing] Successfully delivering ${audioBuffer.length} bytes audio/mpeg in ${totalDuration}ms`);
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Length', audioBuffer.length);
-        res.setHeader('X-TTS-Engine', 'edge-neural');
-        res.setHeader('X-Response-Time-Ms', String(totalDuration));
-        res.end(audioBuffer);
+        sendBuffer(res, 200, audioBuffer, 'audio/mpeg', {
+          'X-TTS-Engine': 'edge-neural',
+          'X-Response-Time-Ms': String(totalDuration),
+        });
         return;
       }
     }
@@ -366,12 +397,10 @@ export default async function handler(req: any, res: any) {
           if (wavBuffer.length >= 256) {
             const totalDuration = Date.now() - reqStart;
             console.log(`[TTS Timing] Gemini TTS fallback succeeded in ${Date.now() - geminiStart}ms (${wavBuffer.length} bytes, total ${totalDuration}ms)`);
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'audio/wav');
-            res.setHeader('Content-Length', wavBuffer.length);
-            res.setHeader('X-TTS-Engine', 'gemini-3.8-flash-lite-tts');
-            res.setHeader('X-Response-Time-Ms', String(totalDuration));
-            res.end(wavBuffer);
+            sendBuffer(res, 200, wavBuffer, 'audio/wav', {
+              'X-TTS-Engine': 'gemini-3.8-flash-lite-tts',
+              'X-Response-Time-Ms': String(totalDuration),
+            });
             return;
           }
         }
@@ -386,13 +415,12 @@ export default async function handler(req: any, res: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const totalDuration = Date.now() - reqStart;
     console.error(`[API /api/tts/synthesize error after ${totalDuration}ms]:`, errMsg);
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('X-Response-Time-Ms', String(totalDuration));
-    res.end(JSON.stringify({
+    sendJson(res, 500, {
       error: errMsg,
       timingMs: totalDuration,
       timestamp: new Date().toISOString(),
-    }));
+    }, {
+      'X-Response-Time-Ms': String(totalDuration),
+    });
   }
 }

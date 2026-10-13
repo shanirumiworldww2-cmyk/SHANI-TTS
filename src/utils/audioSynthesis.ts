@@ -249,32 +249,6 @@ export function speakWithBrowserVoice(text: string, voice: Voice, settings: Voic
   });
 }
 
-/**
- * Generates an audio WAV blob for browser speech playback and waveform visualization
- */
-export async function generateBrowserSpeechWav(text: string, voice: Voice, settings: VoiceSettings): Promise<Blob> {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  const duration = Math.max(0.8, words / (2.6 * (settings.speed || 1.0)) + 0.3);
-  const sampleRate = 24000;
-  const totalSamples = Math.floor(duration * sampleRate);
-
-  const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-  const buffer = audioCtx.createBuffer(1, totalSamples, sampleRate);
-  const data = buffer.getChannelData(0);
-
-  const baseF = voice.gender === 'Female' ? 220 : 135;
-  for (let i = 0; i < totalSamples; i++) {
-    const t = i / sampleRate;
-    const syllable = 0.5 + 0.5 * Math.sin(t * 14);
-    // Pleasant melodic tone for waveform
-    const sample = Math.sin(2 * Math.PI * baseF * t) * 0.35 + Math.sin(4 * Math.PI * baseF * t) * 0.15;
-    data[i] = sample * syllable * 0.25;
-  }
-
-  const wavBlob = audioBufferToWav(buffer);
-  await audioCtx.close();
-  return wavBlob;
-}
 
 /**
  * Synthesizes speech for a single text chunk.
@@ -371,18 +345,8 @@ export async function synthesizeChunkAudio(
     } catch {}
   }
 
-  // Final browser speech fallback to guarantee audio never fails on external shared devices
-  try {
-    console.warn(`Server synthesis failed (${lastError}), generating client audio fallback for "${voice.name}"...`);
-    const fallbackBlob = await generateBrowserSpeechWav(text, voice, settings);
-    if (fallbackBlob && fallbackBlob.size > 100) {
-      return fallbackBlob;
-    }
-  } catch (clientErr) {
-    console.error('Client speech fallback error:', clientErr);
-  }
-
-  throw new Error(`Voice synthesis failed: ${lastError || 'Unable to connect to neural voice service'}. Please check your connection or connect a local server.`);
+  // Do not hide errors with fake audio: throw clear error if real speech synthesis failed
+  throw new Error(`Voice synthesis failed: ${lastError || 'Unable to connect to neural voice service'}. Please verify network connectivity and server logs.`);
 }
 
 export function createAudioUrl(blob: Blob): string {

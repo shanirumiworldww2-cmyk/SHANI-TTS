@@ -178,7 +178,8 @@ export default async function handler(req: any, res: any) {
           chunks.push(chunk.data);
         }
       }
-    } catch {
+    } catch (primaryErr) {
+      console.warn(`[Edge TTS] Primary voice "${edgeVoice}" failed, retrying with universal fallback:`, primaryErr);
       // Retry with universal fallback neural voice
       const fallbackVoice = voice?.gender === 'Female' ? 'en-US-JennyNeural' : 'en-US-GuyNeural';
       const commFallback = new Communicate(text.trim(), { voice: fallbackVoice });
@@ -199,11 +200,62 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    // 3. Optional Gemini Cloud TTS fallback if GEMINI_API_KEY is configured
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        console.log('[TTS] Attempting Gemini Cloud Neural TTS fallback...');
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI();
+        const geminiVoice = voice?.gender === 'Female' ? 'Kore' : 'Fenrir';
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash-lite-tts',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: text.trim(),
+                  speechMetadata: {
+                    style: `${voice?.description || 'Natural speech'}. Rate: ${speedRatio}x.`,
+                  },
+                },
+              ],
+            },
+          ],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: geminiVoice },
+              },
+            },
+          },
+        });
+
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+          const wavBuffer = Buffer.from(base64Audio, 'base64');
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'audio/wav');
+          res.setHeader('Content-Length', wavBuffer.length);
+          res.setHeader('X-TTS-Engine', 'gemini-neural');
+          res.end(wavBuffer);
+          return;
+        }
+      } catch (geminiErr) {
+        console.error('[TTS] Gemini Cloud fallback error:', geminiErr);
+      }
+    }
+
     throw new Error('No audio returned by neural engine');
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[API /api/tts/synthesize error]:', err);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: `Speech synthesis error: ${errMsg}` }));
+    res.end(JSON.stringify({
+      error: `Speech synthesis error: ${errMsg}`,
+      timestamp: new Date().toISOString(),
+    }));
   }
 }

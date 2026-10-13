@@ -2225,6 +2225,42 @@ export const PRESET_VOICES: Voice[] = [
     "avatarColor": "#6366f1",
     "previewSampleText": "Across billions of galaxies, matter converges and disperses in the eternal dance of creation.",
     "baseSpeakerId": "en-US-GuyNeural"
+  },
+  {
+    "id": "voice-ava-neural",
+    "name": "Ava",
+    "category": "Conversational & AI",
+    "gender": "Female",
+    "accent": "American",
+    "language": "English",
+    "description": "Expressive, bright, conversational American female voice ideal for virtual assistants and modern explainers.",
+    "tags": [
+      "Conversational",
+      "Assistant",
+      "Warm",
+      "Modern"
+    ],
+    "avatarColor": "#ec4899",
+    "previewSampleText": "Hello! I am Ava, designed for expressive, fluid conversations and high quality audio production.",
+    "baseSpeakerId": "en-US-AvaNeural"
+  },
+  {
+    "id": "voice-andrew-multilingual",
+    "name": "Andrew Multilingual",
+    "category": "Narration & Audiobooks",
+    "gender": "Male",
+    "accent": "American",
+    "language": "English & Multilingual",
+    "description": "Versatile, natural multilingual male narrator supporting seamless multi-language reading.",
+    "tags": [
+      "Multilingual",
+      "Narration",
+      "Documentary",
+      "Professional"
+    ],
+    "avatarColor": "#3b82f6",
+    "previewSampleText": "Welcome! I can seamlessly articulate complex multi-language text with clarity and warmth.",
+    "baseSpeakerId": "en-US-AndrewMultilingualNeural"
   }
 ];
 

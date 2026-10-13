@@ -132,10 +132,10 @@ if __name__ == "__main__":
           </div>
           <div>
             <h3 className="text-sm font-bold text-white tracking-tight">
-              Execute VOIVER Studio on Your Local PC
+              Execute TOOL BY SHANI on Your Local PC
             </h3>
             <p className="text-xs text-zinc-300 mt-0.5">
-              Includes complete source code, Windows 1-click launcher (<code className="text-amber-300 font-mono">run.bat</code>), Mac/Linux launcher (<code className="text-amber-300 font-mono">run.sh</code>), Docker config, and full offline documentation.
+              Includes complete source code, Windows 1-click launcher (<code className="text-amber-300 font-mono">run.bat</code>), Mac/Linux launcher (<code className="text-amber-300 font-mono">run.sh</code>), Pocket TTS, Vercel serverless config, and 130+ voices.
             </p>
           </div>
         </div>
@@ -405,6 +405,30 @@ if __name__ == "__main__":
           <pre className="bg-[#0b0c12] p-4 rounded-xl border border-white/[0.06] text-xs font-mono text-zinc-200 overflow-x-auto leading-relaxed max-h-72">
             {customPythonServerScript}
           </pre>
+        </div>
+
+        {/* Method 5: Vercel & Cloud Deployment */}
+        <div className="lg:col-span-2 bg-[#10121b] border border-blue-500/20 rounded-2xl p-5 shadow-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ExternalLink className="h-4 w-4 text-blue-400" />
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <span>5. Vercel & GitHub Deployment (Fix HTTP 404)</span>
+                <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1.5 py-0.2 rounded font-mono">
+                  Serverless Ready
+                </span>
+              </h3>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-300">
+            If you deployed to Vercel via GitHub and saw <strong>HTTP 404</strong>, this repository now includes pre-configured <code className="text-amber-300">vercel.json</code> and <code className="text-amber-300">api/index.ts</code> serverless functions! Simply push this update to your GitHub repo, and Vercel will automatically route synthesis calls without any 404 errors.
+          </p>
+          <div className="bg-[#0b0c12] p-3 rounded-xl border border-white/[0.06] text-xs font-mono text-blue-300/90 leading-relaxed">
+            <div># Git commit and push to Vercel</div>
+            <div className="text-zinc-200">git add vercel.json api/index.ts</div>
+            <div className="text-zinc-200">git commit -m &quot;Add Vercel serverless API handlers&quot;</div>
+            <div className="text-zinc-200">git push origin main</div>
+          </div>
         </div>
       </div>
     </div>

@@ -37,6 +37,7 @@ interface StudioViewProps {
   onUpdateServerConfig?: (config: ServerConfig) => void;
   onOpenVoiceLab: () => void;
   onSaveGeneration: (gen: GenerationRecord) => void;
+  onResetVoices?: () => void;
 }
 
 export const StudioView: React.FC<StudioViewProps> = ({
@@ -52,6 +53,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
   onUpdateServerConfig,
   onOpenVoiceLab,
   onSaveGeneration,
+  onResetVoices,
 }) => {
   const [text, setText] = useState<string>(
     SAMPLE_TEXT_SCRIPTS[0].text
@@ -526,6 +528,7 @@ export const StudioView: React.FC<StudioViewProps> = ({
         onSelectVoice={setSelectedVoice}
         onOpenVoiceLab={onOpenVoiceLab}
         voiceSettings={voiceSettings}
+        onResetVoices={onResetVoices}
       />
     </div>
   );

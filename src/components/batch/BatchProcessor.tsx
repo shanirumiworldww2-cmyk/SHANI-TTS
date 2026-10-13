@@ -15,7 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Voice, VoiceSettings, BatchItem, ServerConfig } from '../../types/tts';
-import { synthesizeChunkAudio, stitchWavBlobs, createAudioUrl } from '../../utils/audioSynthesis';
+import { synthesizeChunkAudio, stitchWavBlobs, createAudioUrl, getAudioBlobDuration } from '../../utils/audioSynthesis';
 import { formatDuration } from '../../utils/textChunker';
 
 interface BatchProcessorProps {
@@ -173,15 +173,26 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
           serverConfig.connected
         );
 
-        const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-        const arrayBuf = await blob.arrayBuffer();
-        const decoded = await audioCtx.decodeAudioData(arrayBuf.slice(0));
-        await audioCtx.close();
+        let duration = 2.5;
+        try {
+          const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          if (AudioContextClass) {
+            const audioCtx = new AudioContextClass();
+            const arrayBuf = await blob.arrayBuffer();
+            const decoded = await audioCtx.decodeAudioData(arrayBuf.slice(0));
+            duration = decoded.duration;
+            await audioCtx.close().catch(() => {});
+          } else {
+            duration = await getAudioBlobDuration(blob);
+          }
+        } catch {
+          duration = await getAudioBlobDuration(blob);
+        }
 
         items[i].status = 'completed';
         items[i].progress = 100;
         items[i].audioBlob = blob;
-        items[i].duration = decoded.duration;
+        items[i].duration = duration;
         setBatchItems([...items]);
       } catch (err: unknown) {
         items[i].status = 'failed';

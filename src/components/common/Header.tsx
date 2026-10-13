@@ -27,13 +27,13 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-lg font-bold tracking-tight text-white font-sans">VOIVER</span>
+              <span className="text-lg font-bold tracking-tight text-white font-sans">TOOL BY SHANI</span>
               <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400/90 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
-                Coqui TTS
+                VOIVER TTS
               </span>
             </div>
             <p className="text-[11px] text-zinc-400 hidden sm:block">
-              Open-Source Voice Synthesis & Local Hosting Studio
+              Open-Source Neural Voice Studio · 130+ Realistic Voices
             </p>
           </div>
         </div>

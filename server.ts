@@ -19,6 +19,18 @@ const ai = new GoogleGenAI();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Enable CORS for all cross-origin requests
+app.use((_req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  if (_req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+
 // In-memory model registry & custom fine-tuned uploads metadata
 interface ModelEntry {
   id: string;
@@ -195,7 +207,16 @@ app.delete('/api/models/:id', (req, res) => {
   res.json({ success: true, removed });
 });
 
-function mapVoiceToEdgeVoice(voiceName: string, gender: string, language: string, text?: string): string {
+function mapVoiceToEdgeVoice(voice: any, text?: string): string {
+  // 1. If voice explicitly has a valid baseSpeakerId matching a Neural voice, use it directly!
+  if (voice?.baseSpeakerId && typeof voice.baseSpeakerId === 'string' && voice.baseSpeakerId.includes('Neural')) {
+    return voice.baseSpeakerId;
+  }
+
+  const voiceName = voice?.name || '';
+  const gender = voice?.gender || 'Male';
+  const language = voice?.language || 'en';
+
   // If text contains Urdu/Arabic script, route to native Urdu neural voice
   if (text && /[\u0600-\u06FF]/.test(text)) {
     return gender === 'Female' ? 'ur-PK-UzmaNeural' : 'ur-PK-AsadNeural';
@@ -230,6 +251,18 @@ function mapVoiceToEdgeVoice(voiceName: string, gender: string, language: string
   }
   if (lang.includes('french') || lang.includes('fr')) {
     return gender === 'Female' ? 'fr-FR-DeniseNeural' : 'fr-FR-HenriNeural';
+  }
+  if (lang.includes('arabic') || lang.includes('ar')) {
+    return gender === 'Female' ? 'ar-SA-ZariyahNeural' : 'ar-SA-HamedNeural';
+  }
+  if (lang.includes('japanese') || lang.includes('ja')) {
+    return gender === 'Female' ? 'ja-JP-NanamiNeural' : 'ja-JP-KeitaNeural';
+  }
+  if (lang.includes('korean') || lang.includes('ko')) {
+    return gender === 'Female' ? 'ko-KR-SunHiNeural' : 'ko-KR-InJoonNeural';
+  }
+  if (lang.includes('chinese') || lang.includes('zh')) {
+    return gender === 'Female' ? 'zh-CN-XiaoxiaoNeural' : 'zh-CN-YunxiNeural';
   }
 
   return gender === 'Female' ? 'en-US-JennyNeural' : 'en-US-GuyNeural';
@@ -393,7 +426,7 @@ app.post('/api/tts/synthesize', async (req, res) => {
 
   // 2. High-Fidelity Studio Neural Speech via Edge TTS (Unlimited & Real Human Voice)
   try {
-    const edgeVoice = mapVoiceToEdgeVoice(voice?.name || '', voice?.gender || 'Male', voice?.language || 'en', text.trim());
+    const edgeVoice = mapVoiceToEdgeVoice(voice, text.trim());
     const speedRatio = Number(settings?.speed) || 1.0;
     const rateDiff = Math.round((speedRatio - 1) * 100);
     const rateStr = rateDiff >= 0 ? `+${rateDiff}%` : `${rateDiff}%`;

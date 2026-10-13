@@ -26,21 +26,57 @@ import {
 export default function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'voices' | 'batch' | 'hosting' | 'history'>('studio');
 
-  // Voices state
+  // Voices state - guarantees all 132 PRESET_VOICES are present on any client/Vercel session
   const [voices, setVoices] = useState<Voice[]>(() => {
     try {
       const saved = localStorage.getItem('voiver_voices');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        const existingIds = new Set(parsed.map((v: Voice) => v.id));
-        const missingPresets = PRESET_VOICES.filter((p) => !existingIds.has(p.id));
-        return [...missingPresets, ...parsed];
+        const parsed: Voice[] = JSON.parse(saved);
+        const customVoices = parsed.filter(
+          (v) => (v.isCloned || v.isCustom) && !PRESET_VOICES.some((pv) => pv.id === v.id)
+        );
+        const merged = [...PRESET_VOICES, ...customVoices];
+        if (parsed.length < merged.length) {
+          localStorage.setItem('voiver_voices', JSON.stringify(merged));
+        }
+        return merged;
       }
     } catch {}
     return PRESET_VOICES;
   });
 
   const [selectedVoice, setSelectedVoice] = useState<Voice>(voices[0] || PRESET_VOICES[0]);
+
+  // Ensure that all 132 preset voices are always present on any device/session (even with stale cache)
+  useEffect(() => {
+    setVoices((current) => {
+      const customOnly = current.filter(
+        (v) => (v.isCloned || v.isCustom) && !PRESET_VOICES.some((pv) => pv.id === v.id)
+      );
+      const targetList = [...PRESET_VOICES, ...customOnly];
+      if (current.length < targetList.length) {
+        try {
+          localStorage.setItem('voiver_voices', JSON.stringify(targetList));
+        } catch {}
+        return targetList;
+      }
+      return current;
+    });
+  }, []);
+
+  const handleResetVoices = () => {
+    const customOnly = voices.filter(
+      (v) => (v.isCloned || v.isCustom) && !PRESET_VOICES.some((pv) => pv.id === v.id)
+    );
+    const refreshed = [...PRESET_VOICES, ...customOnly];
+    setVoices(refreshed);
+    try {
+      localStorage.setItem('voiver_voices', JSON.stringify(refreshed));
+    } catch {}
+    if (!refreshed.some((v) => v.id === selectedVoice.id)) {
+      setSelectedVoice(refreshed[0]);
+    }
+  };
 
   // Models state
   const [models, setModels] = useState<CoquiModel[]>(() => {
@@ -188,6 +224,7 @@ export default function App() {
             onUpdateServerConfig={setServerConfig}
             onOpenVoiceLab={() => setActiveTab('voices')}
             onSaveGeneration={handleSaveGeneration}
+            onResetVoices={handleResetVoices}
           />
         )}
 

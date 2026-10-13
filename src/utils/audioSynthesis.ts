@@ -54,7 +54,47 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 /**
- * Stitches multiple audio WAV blobs into a single continuous master WAV file
+ * Safely determines the duration of an audio blob using an HTML5 Audio element
+ */
+export function getAudioBlobDuration(blob: Blob): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const audio = new Audio();
+      const url = URL.createObjectURL(blob);
+      audio.preload = 'metadata';
+      audio.src = url;
+
+      const cleanup = () => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      };
+
+      audio.onloadedmetadata = () => {
+        const d = audio.duration;
+        cleanup();
+        resolve(isFinite(d) && d > 0 ? d : 2.5);
+      };
+
+      audio.onerror = () => {
+        cleanup();
+        resolve(2.5);
+      };
+
+      // Timeout fallback in case metadata loading hangs
+      setTimeout(() => {
+        cleanup();
+        resolve(2.5);
+      }, 2000);
+    } catch {
+      resolve(2.5);
+    }
+  });
+}
+
+/**
+ * Stitches multiple audio WAV blobs into a single continuous master WAV file.
+ * Resilient against browser Web Audio decoding limitations.
  */
 export async function stitchWavBlobs(
   blobs: Blob[],
@@ -64,68 +104,105 @@ export async function stitchWavBlobs(
     throw new Error('No audio chunks provided for stitching');
   }
 
-  const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-
+  // Handle single chunk directly with full resilience
   if (blobs.length === 1) {
-    const arrayBuffer = await blobs[0].arrayBuffer();
-    const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-    const wavBlob = audioBufferToWav(decoded);
-    await audioContext.close();
-    return { blob: wavBlob, duration: decoded.duration };
-  }
-
-  const decodedBuffers: AudioBuffer[] = [];
-  for (const blob of blobs) {
-    const arrayBuffer = await blob.arrayBuffer();
-    const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-    decodedBuffers.push(decoded);
-  }
-
-  const sampleRate = decodedBuffers[0].sampleRate;
-  const numChannels = decodedBuffers[0].numberOfChannels;
-  const pauseSamples = Math.floor((pauseDurationMs / 1000) * sampleRate);
-
-  let totalSamples = 0;
-  for (let i = 0; i < decodedBuffers.length; i++) {
-    totalSamples += decodedBuffers[i].length;
-    if (i < decodedBuffers.length - 1) {
-      totalSamples += pauseSamples;
-    }
-  }
-
-  const masterBuffer = audioContext.createBuffer(numChannels, totalSamples, sampleRate);
-  let currentOffset = 0;
-
-  for (let i = 0; i < decodedBuffers.length; i++) {
-    const buf = decodedBuffers[i];
-    for (let c = 0; c < numChannels; c++) {
-      const sourceChannel = buf.getChannelData(c % buf.numberOfChannels);
-      const targetChannel = masterBuffer.getChannelData(c);
-      targetChannel.set(sourceChannel, currentOffset);
-
-      if (currentOffset > 0) {
-        const fadeLen = Math.min(240, sourceChannel.length);
-        for (let f = 0; f < fadeLen; f++) {
-          const fadeRatio = f / fadeLen;
-          targetChannel[currentOffset + f] = sourceChannel[f] * fadeRatio;
+    const singleBlob = blobs[0];
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        const audioContext = new AudioCtx();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume().catch(() => {});
         }
+        const arrayBuffer = await singleBlob.arrayBuffer();
+        const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        const wavBlob = audioBufferToWav(decoded);
+        await audioContext.close().catch(() => {});
+        return { blob: wavBlob, duration: decoded.duration };
+      }
+    } catch (decodeErr) {
+      console.warn('AudioContext single-chunk decode fallback:', decodeErr);
+    }
+
+    // Direct blob fallback if Web Audio decode is restricted or fails
+    const dur = await getAudioBlobDuration(singleBlob);
+    return { blob: singleBlob, duration: dur };
+  }
+
+  // Multi-chunk stitching
+  try {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) {
+      throw new Error('Web AudioContext not supported in this browser');
+    }
+
+    const audioContext = new AudioCtx();
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume().catch(() => {});
+    }
+
+    const decodedBuffers: AudioBuffer[] = [];
+    for (const blob of blobs) {
+      const arrayBuffer = await blob.arrayBuffer();
+      const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+      decodedBuffers.push(decoded);
+    }
+
+    const sampleRate = decodedBuffers[0].sampleRate;
+    const numChannels = decodedBuffers[0].numberOfChannels;
+    const pauseSamples = Math.floor((pauseDurationMs / 1000) * sampleRate);
+
+    let totalSamples = 0;
+    for (let i = 0; i < decodedBuffers.length; i++) {
+      totalSamples += decodedBuffers[i].length;
+      if (i < decodedBuffers.length - 1) {
+        totalSamples += pauseSamples;
       }
     }
 
-    currentOffset += buf.length;
-    if (i < decodedBuffers.length - 1) {
-      currentOffset += pauseSamples;
+    const masterBuffer = audioContext.createBuffer(numChannels, totalSamples, sampleRate);
+    let currentOffset = 0;
+
+    for (let i = 0; i < decodedBuffers.length; i++) {
+      const buf = decodedBuffers[i];
+      for (let c = 0; c < numChannels; c++) {
+        const sourceChannel = buf.getChannelData(c % buf.numberOfChannels);
+        const targetChannel = masterBuffer.getChannelData(c);
+        targetChannel.set(sourceChannel, currentOffset);
+
+        if (currentOffset > 0) {
+          const fadeLen = Math.min(240, sourceChannel.length);
+          for (let f = 0; f < fadeLen; f++) {
+            const fadeRatio = f / fadeLen;
+            targetChannel[currentOffset + f] = sourceChannel[f] * fadeRatio;
+          }
+        }
+      }
+
+      currentOffset += buf.length;
+      if (i < decodedBuffers.length - 1) {
+        currentOffset += pauseSamples;
+      }
     }
+
+    const totalDuration = totalSamples / sampleRate;
+    const masterWavBlob = audioBufferToWav(masterBuffer);
+    await audioContext.close().catch(() => {});
+
+    return {
+      blob: masterWavBlob,
+      duration: totalDuration,
+    };
+  } catch (stitchErr) {
+    console.warn('AudioContext multi-chunk decode error, using seamless binary concatenation fallback:', stitchErr);
+    // Safe binary concatenation fallback for MP3 / audio chunks
+    const combinedBlob = new Blob(blobs, { type: blobs[0]?.type || 'audio/mpeg' });
+    const duration = await getAudioBlobDuration(combinedBlob);
+    return {
+      blob: combinedBlob,
+      duration,
+    };
   }
-
-  const totalDuration = totalSamples / sampleRate;
-  const masterWavBlob = audioBufferToWav(masterBuffer);
-  await audioContext.close();
-
-  return {
-    blob: masterWavBlob,
-    duration: totalDuration,
-  };
 }
 
 /**
@@ -213,40 +290,99 @@ export async function synthesizeChunkAudio(
   engineMode?: 'auto' | 'local_coqui' | 'browser_speech' | 'cloud_neural',
   onQuotaExceeded?: () => void
 ): Promise<Blob> {
-  try {
-    const res = await fetch('/api/tts/synthesize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        voice,
-        settings,
-        server_url: serverUrl,
-        useLocalServer: Boolean(useLocalServer),
-      }),
-    });
+  const requestPayload = JSON.stringify({
+    text,
+    voice,
+    settings,
+    server_url: serverUrl,
+    useLocalServer: Boolean(useLocalServer),
+  });
 
-    if (res.ok) {
-      const blob = await res.blob();
-      if (blob.size > 100) {
-        return blob;
+  const endpointsToTry = [
+    '/api/tts/synthesize',
+    '/api/index/tts/synthesize',
+    '/api/index',
+    '/tts/synthesize',
+  ];
+
+  let lastError: string | null = null;
+
+  for (const endpoint of endpointsToTry) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestPayload,
+      });
+
+      if (res.ok) {
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        // If the server returned HTML (like an SPA fallback index.html), this is NOT audio!
+        if (contentType.includes('text/html')) {
+          lastError = `Endpoint ${endpoint} returned HTML instead of audio`;
+          continue;
+        }
+
+        const blob = await res.blob();
+        if (blob.size > 100) {
+          // Normalize mime type to audio/mpeg or audio/wav
+          const resolvedType = blob.type.includes('wav') ? 'audio/wav' : 'audio/mpeg';
+          return new Blob([blob], { type: resolvedType });
+        }
       }
-    }
 
-    const errJson = await res.json().catch(() => null);
-    if (res.status === 429 || errJson?.quotaExceeded) {
-      if (onQuotaExceeded) onQuotaExceeded();
-      throw new Error('API Quota Exceeded. Please ensure local Coqui/Pocket TTS server is connected or try again.');
-    }
+      // If 404, continue to next endpoint variant
+      if (res.status === 404) {
+        lastError = `HTTP 404 on ${endpoint}`;
+        continue;
+      }
 
-    throw new Error(errJson?.error || `HTTP ${res.status}`);
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-      if (onQuotaExceeded) onQuotaExceeded();
+      const errJson = await res.json().catch(() => null);
+      const errMsg = errJson?.error || `HTTP ${res.status}`;
+      lastError = errMsg;
+
+      if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+        if (onQuotaExceeded) onQuotaExceeded();
+      }
+      break;
+    } catch (netErr: unknown) {
+      lastError = netErr instanceof Error ? netErr.message : String(netErr);
+      // If network failed on relative path, continue trying next endpoint
     }
-    throw new Error(`Voice synthesis failed: ${errMsg}`);
   }
+
+  // If local server was connected or configured, try directly reaching local server URL as fallback
+  if (useLocalServer && serverUrl) {
+    try {
+      const targetUrl = serverUrl.replace(/\/+$/, '');
+      const localRes = await fetch(`${targetUrl}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          speaker_id: voice?.baseSpeakerId || voice?.name?.toLowerCase().replace(/\s+/g, '_') || 'speaker_0',
+          language: voice?.language?.startsWith('es') ? 'es' : 'en',
+        }),
+      });
+      if (localRes.ok) {
+        const localBlob = await localRes.blob();
+        if (localBlob.size > 100) return localBlob;
+      }
+    } catch {}
+  }
+
+  // Final browser speech fallback to guarantee audio never fails on external shared devices
+  try {
+    console.warn(`Server synthesis failed (${lastError}), generating client audio fallback for "${voice.name}"...`);
+    const fallbackBlob = await generateBrowserSpeechWav(text, voice, settings);
+    if (fallbackBlob && fallbackBlob.size > 100) {
+      return fallbackBlob;
+    }
+  } catch (clientErr) {
+    console.error('Client speech fallback error:', clientErr);
+  }
+
+  throw new Error(`Voice synthesis failed: ${lastError || 'Unable to connect to neural voice service'}. Please check your connection or connect a local server.`);
 }
 
 export function createAudioUrl(blob: Blob): string {

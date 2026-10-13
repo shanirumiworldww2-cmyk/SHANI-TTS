@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Play, Pause, X, Plus, Sparkles, Check, Mic } from 'lucide-react';
+import { Search, Play, Pause, X, Plus, Sparkles, Check, Mic, RotateCcw } from 'lucide-react';
 import { Voice, VoiceSettings } from '../../types/tts';
 import { synthesizeChunkAudio } from '../../utils/audioSynthesis';
 
@@ -11,6 +11,7 @@ interface VoiceSelectorModalProps {
   onSelectVoice: (voice: Voice) => void;
   onOpenVoiceLab: () => void;
   voiceSettings: VoiceSettings;
+  onResetVoices?: () => void;
 }
 
 export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
@@ -21,6 +22,7 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
   onSelectVoice,
   onOpenVoiceLab,
   voiceSettings,
+  onResetVoices,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('All');
@@ -29,7 +31,17 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
 
   if (!isOpen) return null;
 
-  const categories = ['All', 'Narrative', 'Conversational', 'Cinematic', 'Character', 'News', 'Custom Cloned'];
+  const categories = [
+    'All',
+    'Urdu & Regional',
+    'Narrative',
+    'Conversational',
+    'Cinematic',
+    'Audiobook',
+    'News',
+    'Commercial',
+    'Character',
+  ];
 
   const filteredVoices = voices.filter((voice) => {
     const matchesSearch =
@@ -95,12 +107,28 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
         {/* Header */}
         <div className="p-5 border-b border-white/[0.08] flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white tracking-tight">Voice Library</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-white tracking-tight">Voice Library</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-mono font-medium border border-amber-500/30">
+                {filteredVoices.length} of {voices.length} Voices
+              </span>
+            </div>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Select or clone open-source Coqui TTS voices, multi-speaker models, and fine-tuned checkpoints.
+              130+ realistic open-source & neural voices across Urdu, Hindi, English, Spanish, Arabic, French, and more.
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {onResetVoices && (
+              <button
+                onClick={onResetVoices}
+                title="Reload and sync all 132 neural voices"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.12] text-zinc-200 border border-white/10 font-medium text-xs transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Sync 132 Voices</span>
+                <span className="sm:hidden">Sync</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 onClose();

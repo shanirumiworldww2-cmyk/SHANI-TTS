@@ -1,7 +1,7 @@
 export interface Voice {
   id: string;
   name: string;
-  category: 'Narrative' | 'Conversational' | 'Cinematic' | 'Character' | 'News' | 'Custom Cloned' | 'Fine-Tuned';
+  category: 'Narrative' | 'Conversational' | 'Cinematic' | 'Character' | 'News' | 'Audiobook' | 'Commercial' | 'Urdu & Regional' | 'Custom Cloned' | 'Fine-Tuned' | string;
   gender: 'Male' | 'Female' | 'Neutral';
   accent: string;
   language: string;

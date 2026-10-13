@@ -196,7 +196,7 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({
     const a = document.createElement('a');
     a.href = audioUrl;
     const cleanVoice = voiceName.toLowerCase().replace(/\s+/g, '_');
-    a.download = `voiver_${cleanVoice}_${Date.now()}.wav`;
+    a.download = `tool_by_shani_${cleanVoice}_${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -264,6 +264,9 @@ export async function synthesizeChunkAudio(
   engineMode?: 'auto' | 'local_coqui' | 'browser_speech' | 'cloud_neural',
   onQuotaExceeded?: () => void
 ): Promise<Blob> {
+  const CANONICAL_ENDPOINT = '/api/tts/synthesize';
+  const startTime = performance.now();
+
   const requestPayload = JSON.stringify({
     text,
     voice,
@@ -272,81 +275,104 @@ export async function synthesizeChunkAudio(
     useLocalServer: Boolean(useLocalServer),
   });
 
-  const endpointsToTry = [
-    '/api/tts/synthesize',
-    '/api/index/tts/synthesize',
-    '/api/index',
-    '/tts/synthesize',
-  ];
+  const controller = new AbortController();
+  const clientTimeoutMs = 20000;
+  let isTimedOut = false;
 
-  let lastError: string | null = null;
+  const timeoutId = setTimeout(() => {
+    isTimedOut = true;
+    controller.abort();
+  }, clientTimeoutMs);
 
-  for (const endpoint of endpointsToTry) {
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: requestPayload,
-      });
+  console.log(`[TTS Client] Requesting synthesis from ${CANONICAL_ENDPOINT} for "${voice.name}" (${text.slice(0, 30)}...)`);
 
-      if (res.ok) {
-        const contentType = (res.headers.get('content-type') || '').toLowerCase();
-        // If the server returned HTML (like an SPA fallback index.html), this is NOT audio!
-        if (contentType.includes('text/html')) {
-          lastError = `Endpoint ${endpoint} returned HTML instead of audio`;
-          continue;
-        }
+  try {
+    const res = await fetch(CANONICAL_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: requestPayload,
+      signal: controller.signal,
+    });
 
-        const blob = await res.blob();
-        if (blob.size > 100) {
-          // Normalize mime type to audio/mpeg or audio/wav
-          const resolvedType = blob.type.includes('wav') ? 'audio/wav' : 'audio/mpeg';
-          return new Blob([blob], { type: resolvedType });
-        }
+    clearTimeout(timeoutId);
+    const durationMs = Math.round(performance.now() - startTime);
+    const serverTiming = res.headers.get('X-Response-Time-Ms');
+    const ttsEngine = res.headers.get('X-TTS-Engine') || 'unknown';
+
+    console.log(`[TTS Client] Response from ${CANONICAL_ENDPOINT} in ${durationMs}ms (server: ${serverTiming || 'N/A'}ms, engine: ${ttsEngine}, status: ${res.status})`);
+
+    if (res.ok) {
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+
+      // Check Content-Type: If server returned HTML (e.g. SPA fallback), this is NOT audio!
+      if (contentType.includes('text/html') || !contentType.startsWith('audio/')) {
+        throw new Error(`Endpoint returned invalid Content-Type "${contentType}" instead of audio stream.`);
       }
 
-      // If 404, continue to next endpoint variant
-      if (res.status === 404) {
-        lastError = `HTTP 404 on ${endpoint}`;
-        continue;
+      const blob = await res.blob();
+      if (blob.size < 256) {
+        throw new Error(`Synthesis returned insufficient audio data (${blob.size} bytes).`);
       }
 
-      const errJson = await res.json().catch(() => null);
-      const errMsg = errJson?.error || `HTTP ${res.status}`;
-      lastError = errMsg;
-
-      if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-        if (onQuotaExceeded) onQuotaExceeded();
-      }
-      break;
-    } catch (netErr: unknown) {
-      lastError = netErr instanceof Error ? netErr.message : String(netErr);
-      // If network failed on relative path, continue trying next endpoint
+      // Preserve actual audio format (audio/mpeg or audio/wav)
+      const resolvedType = contentType.includes('wav') ? 'audio/wav' : 'audio/mpeg';
+      return new Blob([blob], { type: resolvedType });
     }
-  }
 
-  // If local server was connected or configured, try directly reaching local server URL as fallback
-  if (useLocalServer && serverUrl) {
-    try {
-      const targetUrl = serverUrl.replace(/\/+$/, '');
-      const localRes = await fetch(`${targetUrl}/api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          speaker_id: voice?.baseSpeakerId || voice?.name?.toLowerCase().replace(/\s+/g, '_') || 'speaker_0',
-          language: voice?.language?.startsWith('es') ? 'es' : 'en',
-        }),
-      });
-      if (localRes.ok) {
-        const localBlob = await localRes.blob();
-        if (localBlob.size > 100) return localBlob;
+    // Handle HTTP error responses
+    const errJson = await res.json().catch(() => null);
+    const errMsg = errJson?.error || `HTTP ${res.status}: ${res.statusText}`;
+
+    if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+      if (onQuotaExceeded) onQuotaExceeded();
+    }
+
+    throw new Error(errMsg);
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    const durationMs = Math.round(performance.now() - startTime);
+
+    if (isTimedOut) {
+      console.error(`[TTS Client] Synthesis timed out after ${clientTimeoutMs}ms`);
+      throw new Error(`Speech synthesis timed out after ${clientTimeoutMs / 1000} seconds. Please verify network connection or try a shorter text prompt.`);
+    }
+
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[TTS Client] Synthesis failed after ${durationMs}ms:`, message);
+
+    // If local server was connected or configured, try directly reaching local server URL as fallback
+    if (useLocalServer && serverUrl) {
+      try {
+        console.log(`[TTS Client] Attempting local server fallback to ${serverUrl}...`);
+        const targetUrl = serverUrl.replace(/\/+$/, '');
+        const localController = new AbortController();
+        const localTimeout = setTimeout(() => localController.abort(), 6000);
+
+        const localRes = await fetch(`${targetUrl}/api/tts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            speaker_id: voice?.baseSpeakerId || voice?.name?.toLowerCase().replace(/\s+/g, '_') || 'speaker_0',
+            language: voice?.language?.startsWith('es') ? 'es' : 'en',
+          }),
+          signal: localController.signal,
+        });
+
+        clearTimeout(localTimeout);
+        if (localRes.ok) {
+          const localBlob = await localRes.blob();
+          if (localBlob.size >= 256) {
+            return new Blob([localBlob], { type: 'audio/wav' });
+          }
+        }
+      } catch (localErr) {
+        console.warn('[TTS Client] Local server fallback also failed:', localErr);
       }
-    } catch {}
-  }
+    }
 
-  // Do not hide errors with fake audio: throw clear error if real speech synthesis failed
-  throw new Error(`Voice synthesis failed: ${lastError || 'Unable to connect to neural voice service'}. Please verify network connectivity and server logs.`);
+    throw new Error(`Voice synthesis failed: ${message}`);
+  }
 }
 
 export function createAudioUrl(blob: Blob): string {

@@ -207,65 +207,131 @@ app.delete('/api/models/:id', (req, res) => {
   res.json({ success: true, removed });
 });
 
-function mapVoiceToEdgeVoice(voice: any, text?: string): string {
-  // 1. If voice explicitly has a valid baseSpeakerId matching a Neural voice, use it directly!
-  if (voice?.baseSpeakerId && typeof voice.baseSpeakerId === 'string' && voice.baseSpeakerId.includes('Neural')) {
-    return voice.baseSpeakerId;
-  }
+interface MappedVoiceResult {
+  voice: string;
+  isUrduScript: boolean;
+  isHindiScript: boolean;
+}
 
-  const voiceName = voice?.name || '';
+function mapVoiceToEdgeVoice(voice: any, text?: string): MappedVoiceResult {
+  const trimmedText = (text || '').trim();
+  const isUrduScript = /[\u0600-\u06FF]/.test(trimmedText);
+  const isHindiScript = /[\u0900-\u097F]/.test(trimmedText);
   const gender = voice?.gender || 'Male';
-  const language = voice?.language || 'en';
+  const baseId = typeof voice?.baseSpeakerId === 'string' ? voice.baseSpeakerId : '';
+  const lang = typeof voice?.language === 'string' ? voice.language.toLowerCase() : '';
 
-  // If text contains Urdu/Arabic script, route to native Urdu neural voice
-  if (text && /[\u0600-\u06FF]/.test(text)) {
-    return gender === 'Female' ? 'ur-PK-UzmaNeural' : 'ur-PK-AsadNeural';
+  // 1. Detect Urdu/Arabic script BEFORE checking baseSpeakerId
+  if (isUrduScript) {
+    if (baseId.startsWith('ur-') || lang.includes('ur') || lang.includes('urdu')) {
+      const selectedVoice = baseId.includes('Neural') ? baseId : (gender === 'Female' ? 'ur-PK-UzmaNeural' : 'ur-PK-AsadNeural');
+      return { voice: selectedVoice, isUrduScript: true, isHindiScript: false };
+    }
+    return {
+      voice: gender === 'Female' ? 'ur-PK-UzmaNeural' : 'ur-PK-AsadNeural',
+      isUrduScript: true,
+      isHindiScript: false,
+    };
   }
-  // If text contains Devanagari (Hindi) script, route to Hindi neural voice
-  if (text && /[\u0900-\u097F]/.test(text)) {
-    return gender === 'Female' ? 'hi-IN-SwaraNeural' : 'hi-IN-MadhurNeural';
+
+  // 2. Detect Hindi/Devanagari script BEFORE checking baseSpeakerId
+  if (isHindiScript) {
+    if (baseId.startsWith('hi-') || lang.includes('hi') || lang.includes('hindi')) {
+      const selectedVoice = baseId.includes('Neural') ? baseId : (gender === 'Female' ? 'hi-IN-SwaraNeural' : 'hi-IN-MadhurNeural');
+      return { voice: selectedVoice, isUrduScript: false, isHindiScript: true };
+    }
+    return {
+      voice: gender === 'Female' ? 'hi-IN-SwaraNeural' : 'hi-IN-MadhurNeural',
+      isUrduScript: false,
+      isHindiScript: true,
+    };
   }
 
-  const lower = (voiceName || '').toLowerCase();
-  if (lower.includes('asad') || lower.includes('tariq')) return 'ur-PK-AsadNeural';
-  if (lower.includes('uzma') || lower.includes('fatima')) return 'ur-PK-UzmaNeural';
-  if (lower.includes('adam')) return 'en-US-GuyNeural';
-  if (lower.includes('rachel')) return 'en-US-JennyNeural';
-  if (lower.includes('antoni')) return 'en-US-ChristopherNeural';
-  if (lower.includes('george')) return 'en-GB-RyanNeural';
-  if (lower.includes('bella')) return 'en-US-AriaNeural';
-  if (lower.includes('liam')) return 'en-US-EricNeural';
-  if (lower.includes('charlotte')) return 'en-GB-SoniaNeural';
-  if (lower.includes('vikram')) return 'en-IN-PrabhatNeural';
-  if (lower.includes('elena')) return 'es-ES-ElviraNeural';
+  // 3. For Latin/other scripts, apply baseSpeakerId if it matches a Neural voice
+  if (baseId && baseId.includes('Neural')) {
+    return { voice: baseId, isUrduScript: false, isHindiScript: false };
+  }
 
-  const lang = (language || '').toLowerCase();
+  const voiceName = (voice?.name || '').toLowerCase();
+  if (voiceName.includes('asad') || voiceName.includes('tariq')) return { voice: 'ur-PK-AsadNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('uzma') || voiceName.includes('fatima')) return { voice: 'ur-PK-UzmaNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('adam')) return { voice: 'en-US-GuyNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('rachel')) return { voice: 'en-US-JennyNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('antoni')) return { voice: 'en-US-ChristopherNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('george')) return { voice: 'en-GB-RyanNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('bella')) return { voice: 'en-US-AriaNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('liam')) return { voice: 'en-US-EricNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('charlotte')) return { voice: 'en-GB-SoniaNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('vikram')) return { voice: 'en-IN-PrabhatNeural', isUrduScript: false, isHindiScript: false };
+  if (voiceName.includes('elena')) return { voice: 'es-ES-ElviraNeural', isUrduScript: false, isHindiScript: false };
+
   if (lang.includes('urdu') || lang.includes('ur')) {
-    return gender === 'Female' ? 'ur-PK-UzmaNeural' : 'ur-PK-AsadNeural';
+    return { voice: gender === 'Female' ? 'ur-PK-UzmaNeural' : 'ur-PK-AsadNeural', isUrduScript: false, isHindiScript: false };
   }
   if (lang.includes('hindi') || lang.includes('hi')) {
-    return gender === 'Female' ? 'hi-IN-SwaraNeural' : 'hi-IN-MadhurNeural';
+    return { voice: gender === 'Female' ? 'hi-IN-SwaraNeural' : 'hi-IN-MadhurNeural', isUrduScript: false, isHindiScript: false };
   }
   if (lang.includes('spanish') || lang.includes('es')) {
-    return gender === 'Female' ? 'es-ES-ElviraNeural' : 'es-ES-AlvaroNeural';
+    return { voice: gender === 'Female' ? 'es-ES-ElviraNeural' : 'es-ES-AlvaroNeural', isUrduScript: false, isHindiScript: false };
   }
   if (lang.includes('french') || lang.includes('fr')) {
-    return gender === 'Female' ? 'fr-FR-DeniseNeural' : 'fr-FR-HenriNeural';
+    return { voice: gender === 'Female' ? 'fr-FR-DeniseNeural' : 'fr-FR-HenriNeural', isUrduScript: false, isHindiScript: false };
   }
   if (lang.includes('arabic') || lang.includes('ar')) {
-    return gender === 'Female' ? 'ar-SA-ZariyahNeural' : 'ar-SA-HamedNeural';
+    return { voice: gender === 'Female' ? 'ar-SA-ZariyahNeural' : 'ar-SA-HamedNeural', isUrduScript: false, isHindiScript: false };
   }
   if (lang.includes('japanese') || lang.includes('ja')) {
-    return gender === 'Female' ? 'ja-JP-NanamiNeural' : 'ja-JP-KeitaNeural';
+    return { voice: gender === 'Female' ? 'ja-JP-NanamiNeural' : 'ja-JP-KeitaNeural', isUrduScript: false, isHindiScript: false };
   }
   if (lang.includes('korean') || lang.includes('ko')) {
-    return gender === 'Female' ? 'ko-KR-SunHiNeural' : 'ko-KR-InJoonNeural';
+    return { voice: gender === 'Female' ? 'ko-KR-SunHiNeural' : 'ko-KR-InJoonNeural', isUrduScript: false, isHindiScript: false };
   }
   if (lang.includes('chinese') || lang.includes('zh')) {
-    return gender === 'Female' ? 'zh-CN-XiaoxiaoNeural' : 'zh-CN-YunxiNeural';
+    return { voice: gender === 'Female' ? 'zh-CN-XiaoxiaoNeural' : 'zh-CN-YunxiNeural', isUrduScript: false, isHindiScript: false };
   }
 
-  return gender === 'Female' ? 'en-US-JennyNeural' : 'en-US-GuyNeural';
+  return { voice: gender === 'Female' ? 'en-US-JennyNeural' : 'en-US-GuyNeural', isUrduScript: false, isHindiScript: false };
+}
+
+async function collectStreamWithTimeout(
+  comm: Communicate,
+  timeoutMs: number = 8500
+): Promise<Buffer[]> {
+  const chunks: Buffer[] = [];
+  const generator = comm.stream();
+  let timer: NodeJS.Timeout | null = null;
+  let timedOut = false;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`Edge TTS synthesis timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    await Promise.race([
+      (async () => {
+        for await (const chunk of generator) {
+          if (timedOut) break;
+          if (chunk.type === 'audio' && chunk.data) {
+            chunks.push(chunk.data);
+          }
+        }
+      })(),
+      timeoutPromise,
+    ]);
+    return chunks;
+  } catch (err) {
+    try {
+      await generator.return(undefined as any);
+    } catch {
+      // Stream iterator cleanup
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function mapVoiceToGeminiConfig(voiceName: string, gender: string, description: string) {
@@ -385,6 +451,7 @@ function generateFallbackSpeechWavBuffer(text: string, voice: any, settings: any
 
 // Master TTS synthesis endpoint (handles Local Coqui and Neural TTS engine)
 app.post('/api/tts/synthesize', async (req, res) => {
+  const reqStart = Date.now();
   const { text, voice, settings, server_url, useLocalServer } = req.body;
   if (!text || !text.trim()) {
     res.status(400).json({ error: 'Text prompt is required' });
@@ -393,10 +460,11 @@ app.post('/api/tts/synthesize', async (req, res) => {
 
   // 1. If local Coqui server requested and configured, try it first
   if (useLocalServer && server_url) {
+    const coquiStart = Date.now();
     try {
       const targetUrl = server_url.replace(/\/+$/, '');
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
+      const timeout = setTimeout(() => controller.abort(), 5000);
 
       const coquiRes = await fetch(`${targetUrl}/api/tts`, {
         method: 'POST',
@@ -414,19 +482,25 @@ app.post('/api/tts/synthesize', async (req, res) => {
       if (coquiRes.ok) {
         const arrayBuffer = await coquiRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        res.setHeader('Content-Type', 'audio/wav');
-        res.setHeader('Content-Length', buffer.length);
-        res.send(buffer);
-        return;
+        if (buffer.length >= 256) {
+          console.log(`[TTS Timing] Local server completed in ${Date.now() - coquiStart}ms (${buffer.length} bytes)`);
+          res.setHeader('Content-Type', 'audio/wav');
+          res.setHeader('Content-Length', buffer.length);
+          res.setHeader('X-TTS-Engine', 'local-coqui');
+          res.setHeader('X-Response-Time-Ms', String(Date.now() - reqStart));
+          res.send(buffer);
+          return;
+        }
       }
-    } catch {
-      // Coqui server unreachable or timed out; continue to neural engine
+    } catch (coquiErr: unknown) {
+      const msg = coquiErr instanceof Error ? coquiErr.message : String(coquiErr);
+      console.warn(`[TTS Timing] Optional local server unreachable (${msg}) after ${Date.now() - coquiStart}ms, falling back to cloud neural engine`);
     }
   }
 
   // 2. High-Fidelity Studio Neural Speech via Edge TTS (Unlimited & Real Human Voice)
   try {
-    const edgeVoice = mapVoiceToEdgeVoice(voice, text.trim());
+    const { voice: edgeVoice, isUrduScript, isHindiScript } = mapVoiceToEdgeVoice(voice, text.trim());
     const speedRatio = Number(settings?.speed) || 1.0;
     const rateDiff = Math.round((speedRatio - 1) * 100);
     const rateStr = rateDiff >= 0 ? `+${rateDiff}%` : `${rateDiff}%`;
@@ -434,6 +508,9 @@ app.post('/api/tts/synthesize', async (req, res) => {
     const pitchStr = pitchVal >= 0 ? `+${pitchVal * 2}Hz` : `${pitchVal * 2}Hz`;
 
     let chunks: Buffer[] = [];
+    const edgeStart = Date.now();
+    console.log(`[TTS Timing] Starting synthesis with primary voice "${edgeVoice}" (Urdu=${isUrduScript}, Hindi=${isHindiScript})`);
+
     try {
       const comm = new Communicate(text.trim(), {
         voice: edgeVoice,
@@ -441,89 +518,137 @@ app.post('/api/tts/synthesize', async (req, res) => {
         pitch: pitchStr,
       });
 
-      for await (const chunk of comm.stream()) {
-        if (chunk.type === 'audio' && chunk.data) {
-          chunks.push(chunk.data);
-        }
+      chunks = await collectStreamWithTimeout(comm, 8500);
+      console.log(`[TTS Timing] Primary voice "${edgeVoice}" generated ${chunks.length} chunks in ${Date.now() - edgeStart}ms`);
+    } catch (primaryErr: unknown) {
+      const primMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+      console.warn(`[TTS Timing] Primary voice "${edgeVoice}" failed in ${Date.now() - edgeStart}ms: ${primMsg}`);
+
+      // Handle language-safe fallback:
+      // CRITICAL: Do NOT silently switch Urdu or Hindi to an English-only voice!
+      let fallbackVoice: string | null = null;
+      if (isUrduScript) {
+        fallbackVoice = edgeVoice === 'ur-PK-UzmaNeural' ? 'ur-PK-AsadNeural' : 'ur-PK-UzmaNeural';
+      } else if (isHindiScript) {
+        fallbackVoice = edgeVoice === 'hi-IN-SwaraNeural' ? 'hi-IN-MadhurNeural' : 'hi-IN-SwaraNeural';
+      } else {
+        fallbackVoice = voice?.gender === 'Female' ? 'en-US-JennyNeural' : 'en-US-GuyNeural';
       }
-    } catch {
-      // If specific voice or params failed, retry with universal voice
-      const fallbackVoice = voice?.gender === 'Female' ? 'en-US-JennyNeural' : 'en-US-GuyNeural';
-      const commFallback = new Communicate(text.trim(), { voice: fallbackVoice });
-      for await (const chunk of commFallback.stream()) {
-        if (chunk.type === 'audio' && chunk.data) {
-          chunks.push(chunk.data);
+
+      if (fallbackVoice && fallbackVoice !== edgeVoice) {
+        const fallbackStart = Date.now();
+        console.log(`[TTS Timing] Retrying with language-compatible fallback voice "${fallbackVoice}"`);
+        try {
+          const commFallback = new Communicate(text.trim(), { voice: fallbackVoice, rate: rateStr, pitch: pitchStr });
+          chunks = await collectStreamWithTimeout(commFallback, 8000);
+          console.log(`[TTS Timing] Fallback voice "${fallbackVoice}" generated ${chunks.length} chunks in ${Date.now() - fallbackStart}ms`);
+        } catch (fallbackErr: unknown) {
+          const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          console.error(`[TTS Timing] Fallback voice "${fallbackVoice}" failed after ${Date.now() - fallbackStart}ms: ${fbMsg}`);
+          if (isUrduScript) {
+            throw new Error(`Urdu speech synthesis failed: Both Urdu neural voices were unavailable (${fbMsg}). English voices cannot synthesize Urdu script.`);
+          }
+          if (isHindiScript) {
+            throw new Error(`Hindi speech synthesis failed: Both Hindi neural voices were unavailable (${fbMsg}). English voices cannot synthesize Hindi script.`);
+          }
         }
+      } else if (isUrduScript) {
+        throw new Error(`Urdu speech synthesis failed with voice "${edgeVoice}": ${primMsg}`);
+      } else if (isHindiScript) {
+        throw new Error(`Hindi speech synthesis failed with voice "${edgeVoice}": ${primMsg}`);
       }
     }
 
     if (chunks.length > 0) {
       const audioBuffer = Buffer.concat(chunks);
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Content-Length', audioBuffer.length);
-      res.setHeader('X-TTS-Engine', 'edge-neural');
-      res.send(audioBuffer);
-      return;
+      if (audioBuffer.length >= 256) {
+        const totalDuration = Date.now() - reqStart;
+        console.log(`[TTS Timing] Successfully delivering ${audioBuffer.length} bytes audio/mpeg in ${totalDuration}ms`);
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Content-Length', audioBuffer.length);
+        res.setHeader('X-TTS-Engine', 'edge-neural');
+        res.setHeader('X-Response-Time-Ms', String(totalDuration));
+        res.send(audioBuffer);
+        return;
+      }
     }
-  } catch (edgeErr) {
-    console.error('Edge TTS error:', edgeErr);
+  } catch (edgeErr: unknown) {
+    const edgeMsg = edgeErr instanceof Error ? edgeErr.message : String(edgeErr);
+    console.error('Edge TTS error:', edgeMsg);
   }
 
   // 3. Cloud Neural Speech Synthesis via Gemini TTS fallback
-  try {
-    const voiceConfig = mapVoiceToGeminiConfig(
-      voice?.name || '',
-      voice?.gender || 'Male',
-      voice?.description || ''
-    );
+  if (process.env.GEMINI_API_KEY) {
+    const geminiStart = Date.now();
+    try {
+      const voiceConfig = mapVoiceToGeminiConfig(
+        voice?.name || '',
+        voice?.gender || 'Male',
+        voice?.description || ''
+      );
 
-    const speedNote = settings?.speed && settings.speed !== 1.0 ? ` Rate: ${settings.speed}x.` : '';
-    const stylePrompt = `${voiceConfig.style}.${speedNote}`.trim();
+      const speedNote = settings?.speed && settings.speed !== 1.0 ? ` Rate: ${settings.speed}x.` : '';
+      const stylePrompt = `${voiceConfig.style}.${speedNote}`.trim();
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash-lite-tts',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: text.trim(),
-              speechMetadata: {
-                style: stylePrompt,
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: text.trim(),
+                speechMetadata: {
+                  style: stylePrompt,
+                },
               },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voiceConfig.voiceName },
             },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voiceConfig.voiceName },
           },
         },
-      },
-    });
+      });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (base64Audio) {
-      const wavBuffer = Buffer.from(base64Audio, 'base64');
-      res.setHeader('Content-Type', 'audio/wav');
-      res.setHeader('Content-Length', wavBuffer.length);
-      res.setHeader('X-TTS-Engine', 'gemini-neural');
-      res.send(wavBuffer);
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const wavBuffer = Buffer.from(base64Audio, 'base64');
+        if (wavBuffer.length >= 256) {
+          const totalDuration = Date.now() - reqStart;
+          console.log(`[TTS Timing] Gemini TTS fallback succeeded in ${Date.now() - geminiStart}ms (${wavBuffer.length} bytes, total ${totalDuration}ms)`);
+          res.setHeader('Content-Type', 'audio/wav');
+          res.setHeader('Content-Length', wavBuffer.length);
+          res.setHeader('X-TTS-Engine', 'gemini-3.8-flash-lite-tts');
+          res.setHeader('X-Response-Time-Ms', String(totalDuration));
+          res.send(wavBuffer);
+          return;
+        }
+      }
+
+      throw new Error('No audio returned in response parts');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error('All TTS engines failed:', errMsg);
+      const totalDuration = Date.now() - reqStart;
+      res.status(500).json({
+        error: `Speech synthesis could not be completed. Details: ${errMsg}`,
+        timingMs: totalDuration,
+        quotaExceeded: errMsg.includes('429') || errMsg.includes('quota'),
+      });
       return;
     }
-
-    throw new Error('No audio returned in response parts');
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.error('All TTS engines failed:', errMsg);
-    res.status(500).json({
-      error: `Speech synthesis could not be completed. Details: ${errMsg}`,
-      quotaExceeded: errMsg.includes('429') || errMsg.includes('quota'),
-    });
   }
+
+  const totalDuration = Date.now() - reqStart;
+  res.status(500).json({
+    error: 'Speech synthesis could not be completed by neural engine.',
+    timingMs: totalDuration,
+  });
 });
 
 // Coqui forward synthesis proxy endpoint

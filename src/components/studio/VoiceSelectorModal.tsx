@@ -28,6 +28,7 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [previewAudioObj, setPreviewAudioObj] = useState<HTMLAudioElement | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -60,6 +61,7 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
 
   const handlePreviewVoice = async (voice: Voice, e: React.MouseEvent) => {
     e.stopPropagation();
+    setPreviewError(null);
 
     if (previewingVoiceId === voice.id) {
       if (previewAudioObj) {
@@ -79,7 +81,7 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
     try {
       // Synthesize short preview sample
       const blob = await synthesizeChunkAudio(
-        voice.previewSampleText || `Hello, this is ${voice.name} using the open-source Coqui voice synthesis engine.`,
+        voice.previewSampleText || `Hello, this is ${voice.name} using the open-source neural voice synthesis engine.`,
         voice,
         voiceSettings
       );
@@ -93,8 +95,11 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
       };
 
       await audio.play();
-    } catch {
+    } catch (err: unknown) {
       setPreviewingVoiceId(null);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Preview failed for ${voice.name}:`, msg);
+      setPreviewError(`Preview failed: ${msg}`);
     }
   };
 
@@ -178,6 +183,19 @@ export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Preview Error Banner */}
+        {previewError && (
+          <div className="mx-4 mt-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-between text-xs text-red-300">
+            <span>{previewError}</span>
+            <button
+              onClick={() => setPreviewError(null)}
+              className="text-red-400 hover:text-red-200 ml-2"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Voice Cards List */}
         <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[58vh]">
